@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+    <title>Server List</title>
+    <style>
+        table {
+            width: 90%;
+            border-collapse: collapse;
+            margin: 20px auto;
+        }
+        li {
+            width: 90%;
+            border-collapse: collapse;
+            margin: 20px auto;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background-color: #f1f2f2;
+        }
+    </style>
+</head>
+<body>
+<div>
+    {% with messages = get_flashed_messages() %}
+    {% if messages %}
+    <ul class="flash">
+        {% for message in messages %}
+        <li>{{ message }}</li>
+        {% endfor %}
+    </ul>
+    {% endif %}
+    {% endwith %}
+</div>
+<form action="/" method="GET" onSubmit="return confirm('确认要退出吗？')">
+    <button type="submit" formaction="/logout">退出</button>
+</form>
+<table>
+    <thead>
+    <tr>
+        <th>ID</th>
+        <th>名称</th>
+        <th>主机名</th>
+        <th>网络类型</th>
+        <th>是否显示</th>
+        <th>Host新前缀</th>
+        <th>操作</th>
+    </tr>
+    </thead>
+    <tbody>
+    {% for item in servers %}
+    <tr>
+        <form action="/" method="POST" onSubmit="return confirm('确认要更新吗？')">
+            <td>{{item['id']}}</td>
+            <td>{{item['name']}}</td>
+            <td>{{item['host']}}</td>
+            <td>{{item['network']}}</td>
+            <td>{{item['show']}}</td>
+            <td><label>
+                <input type="text" name="prefix" placeholder="新主机名新前缀（4位）,可不填（默认原主机名前缀）">
+            </label></td>
+            <td>
+                <button name="host" type="submit" value={{item['host']}} formaction="/update_row">更新</button>
+            </td>
+        </form>
+    </tr>
+    {% endfor %}
+    </tbody>
+</table>
+</body>
+</html>
