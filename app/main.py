@@ -43,7 +43,7 @@ def update_dns_records_all(ws_opt_host_name: Optional[str] = None):
     servers = data.get_servers()
     for server in servers:
         new_host_name = generate_dns_name(server, cfg.main_domain)
-        data.update_server_by_name(server, new_host_name)
+        data.update_server_by_name(server, new_host_name, ws_opt_host_name)
 
 
 @app.route('/login', methods=['GET', 'POST'])
@@ -97,12 +97,41 @@ def update_row():
 
 @app.route('/update_all', methods=['POST'])
 def update_all():
-    prefix = request.form.get('prefix')
-    ws_accelerate_url = request.form.get('ws_accelerate_url')
     ws_shared_url = request.form.get('ws_shared_url')
-    ws_opt_host_name = ws_accelerate_url if not_blank(ws_accelerate_url) else ws_shared_url
-    update_dns_records_all()
-    flash("更新所有DNS记录成功!")
+    row_ids = request.form.getlist('row_id')
+    row_prefixes = request.form.getlist('row_prefix')
+    row_ws_urls = request.form.getlist('row_ws_accelerate_url')
+
+    # 校验：查询数据库，确保所有服务器存在且数据合法
+    data_util = DataAccessUtil()
+    db_servers = data_util.get_servers()
+    db_map = {s['id']: s for s in db_servers}
+
+    errors = []
+    for i, sid in enumerate(row_ids):
+        sid_int = int(sid)
+        if sid_int not in db_map:
+            errors.append(f"ID {sid_int} 在数据库中不存在")
+            continue
+        prefix = row_prefixes[i] if i < len(row_prefixes) else ''
+        if not_blank(prefix) and len(prefix) != 4:
+            errors.append(f"ID {sid_int} 的前缀 '{prefix}' 长度不为4")
+
+    if errors:
+        flash("校验未通过: " + "; ".join(errors))
+        return redirect(url_for('servers'))
+
+    # 校验通过，逐个更新
+    success_count = 0
+    for i, sid in enumerate(row_ids):
+        prefix = row_prefixes[i] if i < len(row_prefixes) else ''
+        ws_url = row_ws_urls[i] if i < len(row_ws_urls) else ''
+        ws_opt = ws_url if not_blank(ws_url) else ws_shared_url
+        result = update_dns_records_by_serverid(int(sid), prefix or None, ws_opt)
+        if result:
+            success_count += 1
+
+    flash(f"更新完成: {success_count}/{len(row_ids)} 条成功")
     return redirect(url_for('servers'))
 
 if __name__ == "__main__":

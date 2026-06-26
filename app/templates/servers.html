@@ -39,8 +39,9 @@
     <button type="submit" formaction="/logout">退出</button>
 </form>
 <div style="width: 90%; margin: 10px auto;">
-    <form action="/" method="POST" style="display: inline;">
+    <form action="/update_all" method="POST" style="display: inline;" id="updateAllForm" onSubmit="return confirm('确认要更新所有服务器吗？')">
         <label>ws共用优选加速地址 <input type="text" id="ws_shared_url_input" name="ws_shared_url" placeholder="请输入ws共用优选加速地址"></label>
+        <button type="submit">更新所有服务器</button>
     </form>
 </div>
 <table>
@@ -60,42 +61,84 @@
     <tbody>
     {% for item in servers %}
     <tr>
-        <form action="/" method="POST" onSubmit="return confirm('确认要更新吗？')" class="update-form">
-            <td>{{item['id']}}</td>
-            <td>{{item['name']}}</td>
-            <td>{{item['host']}}</td>
-            <td>{{item['network']}}</td>
-            <td>{{item['ws_host']}}</td>
-            <td>{{item['show']}}</td>
-            <td><label>
-                <input type="text" name="prefix" placeholder="新主机名新前缀（4位）,可不填（默认原主机名前缀）">
-            </label></td>
-            <td><label>
-                {% if item['network'] == 'ws' %}
-                <input type="text" name="ws_accelerate_url" placeholder="ws优选加速地址,可不填（默认原ws加速地址）">
-                {% endif %}
-            </label></td>
-            <td>
+        <td>{{item['id']}}</td>
+        <td>{{item['name']}}</td>
+        <td>{{item['host']}}</td>
+        <td>{{item['network']}}</td>
+        <td>{{item['ws_host']}}</td>
+        <td>{{item['show']}}</td>
+        <td><label>
+            <input type="text" class="row-prefix" placeholder="新主机名新前缀（4位）,可不填（默认原主机名前缀）">
+        </label></td>
+        <td><label>
+            {% if item['network'] == 'ws' %}
+            <input type="text" class="row-ws-url" placeholder="ws优选加速地址,可不填（默认原ws加速地址）">
+            {% endif %}
+        </label></td>
+        <td>
+            <form action="/" method="POST" onSubmit="return confirm('确认要更新吗？')" class="update-form">
                 <button name="id" type="submit" value={{item['id']}} formaction="/update_row">更新</button>
-            </td>
-        </form>
+            </form>
+        </td>
     </tr>
     {% endfor %}
     </tbody>
 </table>
 <script>
-    // 提交行表单时，将顶部的 ws_shared_url_input 值一并提交
+    // 提交行表单时，将本行的 prefix、ws_accelerate_url 和顶部的 ws_shared_url 一起提交
     document.querySelectorAll('.update-form').forEach(function(form) {
         form.addEventListener('submit', function() {
+            var row = this.closest('tr');
+            var prefixInput = row.querySelector('.row-prefix');
+            var wsInput = row.querySelector('.row-ws-url');
             var sharedInput = document.getElementById('ws_shared_url_input');
+            if (prefixInput && prefixInput.value.trim() !== '') {
+                var h = document.createElement('input');
+                h.type = 'hidden';
+                h.name = 'prefix';
+                h.value = prefixInput.value;
+                this.appendChild(h);
+            }
+            if (wsInput && wsInput.value.trim() !== '') {
+                var h = document.createElement('input');
+                h.type = 'hidden';
+                h.name = 'ws_accelerate_url';
+                h.value = wsInput.value;
+                this.appendChild(h);
+            }
             if (sharedInput && sharedInput.value.trim() !== '') {
-                var hidden = document.createElement('input');
-                hidden.type = 'hidden';
-                hidden.name = 'ws_shared_url';
-                hidden.value = sharedInput.value;
-                form.appendChild(hidden);
+                var h = document.createElement('input');
+                h.type = 'hidden';
+                h.name = 'ws_shared_url';
+                h.value = sharedInput.value;
+                this.appendChild(h);
             }
         });
+    });
+
+    // 更新所有服务器：将每行的 id、prefix、ws_accelerate_url 一起提交
+    document.getElementById('updateAllForm').addEventListener('submit', function() {
+        var rows = document.querySelectorAll('tbody tr');
+        rows.forEach(function(row) {
+            var id = row.querySelector('td:first-child').textContent.trim();
+            var prefixInput = row.querySelector('.row-prefix');
+            var wsInput = row.querySelector('.row-ws-url');
+            var hId = document.createElement('input');
+            hId.type = 'hidden';
+            hId.name = 'row_id';
+            hId.value = id;
+            this.appendChild(hId);
+            var hPrefix = document.createElement('input');
+            hPrefix.type = 'hidden';
+            hPrefix.name = 'row_prefix';
+            hPrefix.value = prefixInput ? prefixInput.value : '';
+            this.appendChild(hPrefix);
+            var hWs = document.createElement('input');
+            hWs.type = 'hidden';
+            hWs.name = 'row_ws_accelerate_url';
+            hWs.value = wsInput ? wsInput.value : '';
+            this.appendChild(hWs);
+        }, this);
     });
 </script>
 </body>
