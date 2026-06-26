@@ -1,84 +1,40 @@
 import logging
 
+from typing import Optional
 from trojan_util import DataAccessUtil
 from config import cfg
-from datetime import datetime
-import binascii
+
+
 from flask import Flask, render_template, request, redirect, url_for, session, flash, make_response
 from werkzeug.security import check_password_hash
+from utils import not_blank, generate_dns_name, exits_in_servers
 
 app = Flask(__name__)
 app.secret_key = 'super_secret_key_cfy'
 
 
-def is_blank(s):
-    return s is None or s == ''
-
-def not_blank(s):
-    return s is not None and s != ''
-
-def calc_crc32(text):
-    """
-      计算字符串的CRC32校验值。
-      Args:
-        text: 要计算校验值的字符串。
-      Returns:
-        字符串的CRC32校验值（无符号整数）。
-    """
-    crc32 = binascii.crc32(text.encode('utf-8'))
-    return f'{crc32:08x}'
 
 
-def exits_in_servers(servers, host):
-    for server in servers:
-        if server['host'] == host:
-            return server
-    return None
-
-
-def generate_dns_content(server, main_domain: str, _new_host_prefix: str = None):
-    """
-    生成dns名称
-    :param main_domain: 主域名
-    :param server: 服务器信息
-    :param _new_host_prefix: 传入前缀，不传取数据库里当前的域名前缀
-    :return: prefix + current_date_str + crc16(prefix+current_date_str) + main_domain
-    """
-    current_date = datetime.now()
-    current_date_str = current_date.strftime('%Y%m%d%H%M%S')
-    if is_blank(_new_host_prefix):
-        _new_host_prefix = server['host'][0:4]
-    if 'tcp' == server['network']:
-        _new_host_prefix = _new_host_prefix + 'f1'
-    elif 'ws' == server['network']:
-        _new_host_prefix = _new_host_prefix + 'f2'
-    else:
-        _new_host_prefix = _new_host_prefix + 'f3'
-    new_host = _new_host_prefix + '-' + current_date_str
-    new_host = new_host + '-' + calc_crc32(new_host) + '.' + main_domain
-    return new_host
-
-def update_dns_records_by_name(update_host, _new_host_prefix: str = None):
+def update_dns_records_by_serverid(server_id, _new_host_prefix: Optional[str] = None, ws_opt_host_name: Optional[str] = None):
     """
     更新指定域名
-    :param update_host: 待更新域名名称
+    :param server_id: 服务器ID
     :return:
     """
     if not_blank(_new_host_prefix) and len(_new_host_prefix) != 4:
         return 'new_host_prefix must be 4'
     data = DataAccessUtil()
-    servers = data.get_servers()
-    server = exits_in_servers(servers, update_host)
-    if server is None:
-        logging.error('待更新主机dns[%s] 不存在' % update_host)
+    server = data.get_server_by_id(server_id)
+    if not server:
+        logging.error('服务器ID[%s] 不存在' % server_id)
         return
 
-    new_host_name = generate_dns_content(server, cfg.main_domain,_new_host_prefix)
-    data.update_server_by_name(server, new_host_name)
+    new_host_name = generate_dns_name(server, cfg.main_domain, _new_host_prefix)
+    data.update_server_by_name(server, new_host_name, ws_opt_host_name)
     return new_host_name
 
 
-def update_dns_records_all():
+def update_dns_records_all(ws_opt_host_name: Optional[str] = None):
     """
     更新所有dns记录
     :return:
@@ -86,7 +42,7 @@ def update_dns_records_all():
     data = DataAccessUtil()
     servers = data.get_servers()
     for server in servers:
-        new_host_name = generate_dns_content(server, cfg.main_domain)
+        new_host_name = generate_dns_name(server, cfg.main_domain)
         data.update_server_by_name(server, new_host_name)
 
 
@@ -130,13 +86,25 @@ def servers():
 
 @app.route('/update_row', methods=['POST'])
 def update_row():
-    host = request.form.get('host')
+    server_id = request.form.get('id')
     prefix = request.form.get('prefix')
-    new_host_name = update_dns_records_by_name(host,prefix)
-    flash( f" update dns {host} to {new_host_name} success!")
+    ws_accelerate_url = request.form.get('ws_accelerate_url')
+    ws_shared_url = request.form.get('ws_shared_url')
+    ws_opt_host_name = ws_accelerate_url if not_blank(ws_accelerate_url) else ws_shared_url
+    new_host_name = update_dns_records_by_serverid(server_id, prefix, ws_opt_host_name)
+    flash( f" update dns {server_id} to {new_host_name} success!")
     return redirect(url_for('servers'))
 
+@app.route('/update_all', methods=['POST'])
+def update_all():
+    prefix = request.form.get('prefix')
+    ws_accelerate_url = request.form.get('ws_accelerate_url')
+    ws_shared_url = request.form.get('ws_shared_url')
+    ws_opt_host_name = ws_accelerate_url if not_blank(ws_accelerate_url) else ws_shared_url
+    update_dns_records_all()
+    flash("更新所有DNS记录成功!")
+    return redirect(url_for('servers'))
 
 if __name__ == "__main__":
-    # app.debug = True
+    app.debug = True
     app.run(host="0.0.0.0",port=5000)

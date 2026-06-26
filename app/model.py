@@ -1,7 +1,9 @@
 from sqlalchemy import Column, Integer, String, Text, Boolean, ForeignKey
 from sqlalchemy.ext.declarative import declarative_base
+from typing import Optional, cast
 
 from config import cfg
+from utils import parse_network_settings
 
 Base = declarative_base()
 Base.metadata.schema = cfg.schema
@@ -31,6 +33,12 @@ class V2ServerTrojan(Base):
     updated_at = Column(Integer, nullable=False)
 
     def to_json(self):
+        _network = cast(Optional[str], self.network)
+        _network_settings = cast(Optional[str], self.network_settings)
+        ws_host = ""
+        if _network == 'ws':
+            parsed = parse_network_settings(_network_settings)
+            ws_host = parsed.get("host", "")
         return {
             "id": self.id,
             "group_id": self.group_id,
@@ -44,6 +52,7 @@ class V2ServerTrojan(Base):
             "server_port": self.server_port,
             "network": self.network,
             "network_settings": self.network_settings,
+            "ws_host": ws_host,
             "allow_insecure": bool(self.allow_insecure),
             "server_name": self.server_name,
             "show": bool(self.show),

@@ -1,5 +1,7 @@
+import json
 import logging
 
+from typing import Optional
 from cloudflare.types.dns.record_list_params import Name
 from sqlalchemy import create_engine
 from sqlalchemy import update
@@ -9,6 +11,7 @@ from model import V2ServerTrojan
 from cloudflare import Cloudflare
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
+from utils import get_server_host
 
 
 class DataAccessUtil:
@@ -18,6 +21,21 @@ class DataAccessUtil:
         self.zone_id = cfg.zone_id
         self.client = Cloudflare(api_token=cfg.api_token)
 
+    def get_server_by_id(self, server_id):
+        session = self.Session()
+        try:
+            server = session.query(V2ServerTrojan).filter_by(id=server_id).first()
+            if server:
+                return server.to_json()
+            else:
+                return None
+        except Exception as e:
+            logging.error('*** Exception in get_server_by_id: %s' % e)
+            session.rollback()
+            raise
+        finally:
+            session.close()
+            
     def get_servers(self):
         session = self.Session()
         try:
@@ -32,17 +50,30 @@ class DataAccessUtil:
         finally:
             session.close()
 
-    def _update_db_dns(self, server, new_host_name, content):
-        proxied = True
-        if server['network'] == 'tcp':
-            proxied = False
+    def _update_db_dns(self, server, content, new_host_name, ws_opt_host_name: Optional[str] = None):
+        """_summary_
+
+        Args:
+            server (_type_): _description_ 数据库中服务器信息
+            content (_type_): _description_ 主机ip
+            new_host_name (_type_): _description_ 新域名信息
+            ws_opt_host_name (Optional[str], optional): _description_. Defaults to None. 
+        1. 更新数据库记录（更新host,ws节点有优化地址ws_opt_host_name有值则更新host，network_settings的host始终是new_host_name）
+        2. 用老记录创建新的dns记录(修改备注的更新时间为当前时间、生成新的host) 
+
+        """
+        proxied = False
+        host_name = new_host_name
+        if server['network'] == 'ws':
+            proxied = True
+            host_name = ws_opt_host_name if ws_opt_host_name else host_name
         # 2. 更新数据库记录（更新host,ws节点记得改network_settings）
         session = self.Session()
         try:
             stmt = (
                 update(V2ServerTrojan)
                 .where(V2ServerTrojan.id == server['id'])
-                .values(host=new_host_name)
+                .values(host=host_name)
             )
             if server['network'] == 'ws':
                 network_settings = '{"path":"\/ws-chat-001?ed=2048","headers":{"Host":"%s"}}' % new_host_name
@@ -92,7 +123,7 @@ class DataAccessUtil:
             )
             logging.info('删除域名[%s]记录' % n.name)
 
-    def update_server_by_name(self, server, new_host_name):
+    def update_server_by_name(self, server, new_host_name, ws_opt_host_name: Optional[str] = None):
         """
         1、查询server['host']的dns记录, 不存在则返回
         2. 更新数据库记录（更新host,ws节点记得改network_settings）
@@ -103,21 +134,24 @@ class DataAccessUtil:
         :param new_host_name: 新的域名信息
         :return:
         """
+        dns_host_name = get_server_host(server)
+
         # 1、查询server['host']的前8位dns记录, 不存在则返回 ,获取主机ip
         old_host = self.client.dns.records.list(
             zone_id=self.zone_id,
             type="A",
-            name=Name(startswith=server['host'][0:4]),
+            name=Name(startswith=dns_host_name[0:4]),
             order="name"
         )
         if len(old_host.result) == 0:
             logging.error('没有名叫[%s]的dns记录, 跳过更新' % server['host'])
             return
         content = old_host.result[0].content
+        
 
         # 2. 更新数据库记录（更新host,ws节点记得改network_settings）
         # 3. 创建新的dns记录
-        self._update_db_dns(server, new_host_name, content)
+        self._update_db_dns(server, content, new_host_name, ws_opt_host_name)
         logging.info('新增域名[%s]记录' % new_host_name)
 
         # 4. 删除old_host中超过一个月的记录
